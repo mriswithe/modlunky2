@@ -2,11 +2,14 @@ from abc import ABC, abstractmethod
 from functools import wraps
 from pathlib import Path
 from typing import Callable, Dict, Optional, Union
+import logging
 
 from PIL import Image
 
 from .types import chunk_map_type
 
+
+logger = logging.getLogger(__name__)
 _DEFAULT_BASE_PATH = Path(
     r"C:\Program Files (x86)\Steam\steamapps\common\Spelunky 2\Mods\Extracted"
 )
@@ -33,6 +36,8 @@ def _cache_img_not_class(f):
 
 
 class BaseSpriteLoader(ABC):
+    _sprite_sheet: Image.Image
+
     @property
     @abstractmethod
     def _sprite_sheet_path(self) -> Path:
@@ -86,3 +91,38 @@ class BaseSpriteLoader(ABC):
 
     def key_map(self) -> Dict[str, Callable]:
         return {k: self.get for k in self._chunk_map}
+
+    def replace(self, name: str, img: Image.Image, force: bool = False):
+        coords = self._chunk_map.get(name)
+        if not coords:
+            raise KeyError(f"This Key ({name}) does not exist on this sprite sheet")
+        # Multiplying by the chunk size
+        coords = tuple(map(lambda x: x * self._chunk_size, coords))
+        left, upper, right, lower = coords
+        width = right - left
+        height = lower - upper
+
+        if img.width != width:
+            if not force:
+                raise ValueError(f"Image width should be {width} but is {img.width}.")
+            else:
+                logger.warning(
+                    f"Image width should be {width} but is {img.width}. Continuing due "
+                    f"to force flag"
+                )
+
+        if img.height != height:
+            if not force:
+                raise ValueError(f"Image height should be {height} but is {img.height}")
+            else:
+                logger.warning(
+                    f"Image height should be {height} but is {img.height}. Continuing "
+                    f"due to force flag"
+                )
+        self._sprite_sheet.paste(img, coords)
+        # Clear cached images for this name
+        self._cache_dict.pop(name)
+
+    @property
+    def sprite_sheet(self) -> Image.Image:
+        return self._sprite_sheet.copy()
